@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OnlineBandApp · Estación 01</title>
+  <!-- Tipografías del HUD: Michroma (títulos) e IBM Plex Mono (telemetría) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400&family=Michroma&display=swap">
+</head>
+<body>
+  <div id="hud">
+    <div id="mision">
+      <h1>Online Band <i>·</i> Estación 01</h1>
+      <div id="telemetria">
+        <span><b>BPM</b><em id="t-bpm">---</em></span>
+        <span><b>Escala</b><em id="t-escala">---</em></span>
+        <span><b>Tripulantes</b><em id="t-tripulantes">--</em></span>
+        <span><b>Reloj de misión</b><em id="t-reloj">T+00:00:00</em></span>
+        <span><b>FPS</b><em id="t-fps">--</em></span>
+      </div>
+      <!-- Controles globales: cualquiera puede cambiarlos y cambian para todos -->
+      <div id="consola">
+        <label class="fila"><b>Tempo</b><input id="c-tempo" type="range" min="60" max="180" step="1" value="120"></label>
+        <div class="fila"><b>Escala</b><div id="c-escalas"></div></div>
+      </div>
+    </div>
+
+    <div id="identidad">
+      <b>Identificador</b>
+      <h2 id="mi-indicativo">Enlazando…</h2>
+      <span id="enlace">Enlace · buscando estación</span>
+    </div>
+
+    <svg id="rastreo-linea"><polyline id="r-linea"></polyline><circle id="r-punto" r="6"></circle></svg>
+    <div id="rastreo" hidden>
+      <div id="rastreo-datos"></div>
+      <button id="rastreo-borrar" class="boton" type="button" hidden>Desacoplar · Supr</button>
+    </div>
+
+    <div id="registro"><div class="tit">Registro de misión</div><ul id="registro-lista"></ul></div>
+
+    <div id="acople">
+      <div class="tit">Acoplar módulo</div>
+      <div class="botones">
+        <button class="boton" type="button" data-tipo="percusion">Perc</button>
+        <button class="boton" type="button" data-tipo="armonia">Arm</button>
+        <button class="boton" type="button" data-tipo="melodia">Mel</button>
+      </div>
+    </div>
+
+    <div id="ayuda">Clic: seleccionar · arrastrar módulo propio: reubicar · Supr: desacoplar<br>arrastrar el vacío: orbitar · rueda: acercar · H: ajustes</div>
+  </div>
+  <div id="error"></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

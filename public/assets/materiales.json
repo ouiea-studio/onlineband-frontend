@@ -1,0 +1,77 @@
+{
+  "_nota": "Valores del Principled BSDF de Blender traducidos a MeshPhysicalMaterial de Three.js. color en RGB lineal (0-1).",
+  "materiales": {
+    "percusion": {
+      "archivo": "percusion.glb",
+      "objeto": "Percusion",
+      "material_blender": "Vidrio_Percusion",
+      "triangulos": 4374,
+      "color": [
+        1.0,
+        0.72,
+        0.86
+      ],
+      "metalness": 0.0,
+      "roughness": 0.05,
+      "ior": 1.45,
+      "transmission": 1.0,
+      "thickness": 0.5,
+      "iridescence": 1.0,
+      "iridescenceIOR": 1.33,
+      "iridescenceThicknessRange": [
+        100,
+        420.0
+      ],
+      "thinFilmThickness_nm": 420.0,
+      "talla": "cubo tallado (24 cometas) con mesa"
+    },
+    "armonia": {
+      "archivo": "armonia.glb",
+      "objeto": "Armonia_Trillon",
+      "material_blender": "Vidrio_Armonia",
+      "triangulos": 4018,
+      "color": [
+        0.72,
+        0.95,
+        1.0
+      ],
+      "metalness": 0.0,
+      "roughness": 0.05,
+      "ior": 1.45,
+      "transmission": 1.0,
+      "thickness": 0.5,
+      "iridescence": 1.0,
+      "iridescenceIOR": 1.33,
+      "iridescenceThicknessRange": [
+        100,
+        520.0
+      ],
+      "thinFilmThickness_nm": 520.0,
+      "talla": "trillón"
+    },
+    "melodia": {
+      "archivo": "melodia.glb",
+      "objeto": "Melodia",
+      "material_blender": "Vidrio_Melodia",
+      "triangulos": 4464,
+      "color": [
+        0.86,
+        0.78,
+        1.0
+      ],
+      "metalness": 0.0,
+      "roughness": 0.05,
+      "ior": 1.45,
+      "transmission": 1.0,
+      "thickness": 0.5,
+      "iridescence": 1.0,
+      "iridescenceIOR": 1.33,
+      "iridescenceThicknessRange": [
+        100,
+        620.0
+      ],
+      "thinFilmThickness_nm": 620.0,
+      "talla": "hexecontaedro deltoidal con mesa"
+    }
+  }
+}

@@ -1,0 +1,383 @@
+// Escena 3D: render, cámara, luces, estrellas y postproducción de los 80.
+// Valores y shaders migrados tal cual desde preview/index.html.
+
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
+import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import { ajustes } from './ajustes.js';
+
+// Mezcla espacial: a esta distancia en X el paneo llega a ±1, y a este radio el volumen llega a 0.
+export const RADIO_PANEO = 6;
+export const RADIO_UNIVERSO = 12;
+
+// =====================================================================
+// PARÁMETROS — los valores por defecto vienen de public/ajustes.json (el único archivo
+// de configuración). El panel (tecla H) los modifica en vivo y más adelante la música
+// podrá escribir en estos mismos valores.
+//
+// Vidrio metálico: lo metálico sale del brillo especular teñido, la iridiscencia y el clearcoat
+// (no de metalness: por encima de 0.3 Three.js vuelve opaco el vidrio). Lo translúcido sale de
+// la transmisión, una rugosidad leve (esmerilado) y el color de atenuación, que tiñe el interior.
+//  · entorno: qué reflejan las gemas. 'paleta' = estudio magenta/cian/dorado; 'plata' = estudio neutro.
+//  · colorCuerpo y tinteBase: el color del vidrio es colorCuerpo mezclado con el color propio
+//    de cada gema (materiales.json); tinteBase 0 = solo colorCuerpo, 1 = solo el color propio.
+//  · grosorIrid: grosor de la película iridiscente en nanómetros. Más rango = más viraje de color.
+// =====================================================================
+export const PRESETS_VIDRIO = ajustes.presetsVidrio;
+export const params = {
+  general: { ...ajustes.general },
+  presetVidrio: ajustes.presetVidrio,
+  vidrio: { ...PRESETS_VIDRIO[ajustes.presetVidrio] },
+  nubes: structuredClone(ajustes.nubes),
+  // Gelatina: ondulación constante de la superficie + rebote elástico (resorte amortiguado)
+  gelatina: { ...ajustes.gelatina },
+  // estela: 0 = sin estela, cerca de 1 = estela muy larga · rgb: desplazamiento RGB (fracción del ancho) y su pulso
+  post: structuredClone(ajustes.post),
+};
+
+// --- Render, escena y cámara ---
+// antialias desactivado aquí: el suavizado lo hace el compositor de postproducción
+export const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(params.general.resolucion);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.body.appendChild(renderer.domElement);
+
+export const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x020208); // espacio casi negro
+
+// La cámara mira desde un poco más arriba que en la vista previa, para poder
+// arrastrar las piezas sobre el plano horizontal del universo.
+export const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(0, 3.2, 11);
+
+export const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.minDistance = 3;
+controls.maxDistance = 28;
+controls.maxPolarAngle = Math.PI * 0.495; // no bajar del horizonte
+
+// --- Entorno de iluminación: da reflejos al vidrio sin mostrarse como fondo ---
+// El metal necesita algo que reflejar. Cada entorno es un estudio: una cúpula en degradado
+// (para que todas las facetas reflejen algo de color) más franjas luminosas nítidas
+// (el contraste es lo que lo hace leer como metal y no como vidrio lechoso).
+// Se calculan una sola vez al cargar: no cuestan nada por cuadro.
+function crearEntorno(tipo) {
+  const estudio = new THREE.Scene();
+  const cupula = new THREE.SphereGeometry(20, 64, 32);
+  const colores = [];
+  const d = new THREE.Vector3(), c = new THREE.Color();
+  const pos = cupula.attributes.position;
+  const PALETA = { magenta: new THREE.Color('#ff3fa4'), cian: new THREE.Color('#2fe6ff'),
+                   dorado: new THREE.Color('#ffc247'), violeta: new THREE.Color('#8c59ff') };
+  for (let i = 0; i < pos.count; i++) {
+    d.fromBufferAttribute(pos, i).normalize();
+    if (tipo === 'plata') {
+      // cielo claro arriba con bandas oscuras, horizonte oscuro, suelo gris: el clásico estudio
+      // de cromo. Las bandas son las que dan el reflejo "líquido" al girar.
+      const bandas = 0.3 + 0.7 * THREE.MathUtils.smoothstep(Math.sin(d.y * 22 + d.x * 3), -0.3, 0.3);
+      const v = d.y > 0 ? (0.06 + 0.7 * Math.pow(d.y, 0.8)) * bandas : 0.04 + 0.22 * Math.pow(-d.y, 0.7);
+      c.setRGB(v * 0.95, v * 0.97, v);
+    } else {
+      // magenta a la izquierda, cian a la derecha, dorado abajo, violeta arriba y detrás
+      c.setRGB(0.02, 0.02, 0.04)
+        .add(PALETA.magenta.clone().multiplyScalar(0.5 * Math.pow(Math.max(0, -d.x), 1.5)))
+        .add(PALETA.cian.clone().multiplyScalar(0.5 * Math.pow(Math.max(0, d.x), 1.5)))
+        .add(PALETA.dorado.clone().multiplyScalar(0.45 * Math.pow(Math.max(0, -d.y), 1.2)))
+        .add(PALETA.violeta.clone().multiplyScalar(0.35 * Math.pow(Math.max(0, d.y), 1.2) + 0.15 * Math.max(0, -d.z)));
+    }
+    colores.push(c.r, c.g, c.b);
+  }
+  cupula.setAttribute('color', new THREE.Float32BufferAttribute(colores, 3));
+  estudio.add(new THREE.Mesh(cupula, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+  const franja = (fuerza, ancho, alto, p) => {
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(ancho, alto),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 1, 1).multiplyScalar(fuerza), side: THREE.DoubleSide })
+    );
+    m.position.set(...p);
+    m.lookAt(0, 0, 0);
+    estudio.add(m);
+  };
+  const f = tipo === 'plata' ? 3.5 : 2.5;
+  franja(f, 16, 0.5, [0, 10, 2]);
+  franja(f * 0.8, 0.5, 12, [-8, 6, -7]);
+  franja(f * 0.8, 0.5, 12, [9, 4, -5]);
+  franja(f * 0.6, 10, 0.4, [0, 2, 12]);
+  return pmrem.fromScene(estudio, 0.02).texture;
+}
+const pmrem = new THREE.PMREMGenerator(renderer);
+// Las gemas reciben el entorno directamente en su material (envMap): solo así Three.js
+// respeta su envMapIntensity ("reflejos del entorno"); con scene.environment lo ignora.
+export const entornos = { paleta: crearEntorno('paleta'), plata: crearEntorno('plata') };
+scene.environment = entornos.paleta;
+scene.environmentIntensity = 0.6;
+
+// --- Luces de colores suaves ---
+export const lucesColor = [
+  [0xff40c0, [-5, 4, 3]], [0x33d9ff, [5, 3, 3]], [0x8c59ff, [0, 3, -5]], [0xffb359, [0, -4, 1]],
+].map(([color, pos]) => {
+  const l = new THREE.PointLight(color, params.vidrio.lucesColor, 0, 2);
+  l.position.set(...pos);
+  scene.add(l);
+  return l;
+});
+
+// --- Luces pequeñas en órbita: generan destellos que recorren los bordes del vidrio ---
+export const destellos = [0xffffff, 0xffe2b0, 0xc8f4ff].map((color, i) => {
+  const l = new THREE.PointLight(color, params.vidrio.destellos, 0, 2);
+  l.userData = { radio: 3.6 + i * 0.7, fase: i * 2.1, vel: 0.22 + i * 0.07, alto: 1.4 - i * 1.3 };
+  scene.add(l);
+  return l;
+});
+
+// --- Campo de estrellas sencillo ---
+// Se dibuja como "opaco con mezcla aditiva" para que también se vea a través del vidrio.
+const N = 2500;
+const posEstrellas = new Float32Array(N * 3);
+const colEstrellas = new Float32Array(N * 3);
+for (let i = 0; i < N; i++) {
+  const v = new THREE.Vector3().randomDirection().multiplyScalar(40 + Math.random() * 80);
+  posEstrellas.set([v.x, v.y, v.z], i * 3);
+  // unas pocas estrellas muy brillantes: son las que disparan el filtro estrella
+  const b = Math.random() < 0.03 ? 5 + Math.random() * 5 : 0.35 + Math.random() * 0.65;
+  colEstrellas.set([b * 0.87, b * 0.9, b], i * 3);
+}
+const geoEstrellas = new THREE.BufferGeometry();
+geoEstrellas.setAttribute('position', new THREE.BufferAttribute(posEstrellas, 3));
+geoEstrellas.setAttribute('color', new THREE.BufferAttribute(colEstrellas, 3));
+export const estrellas = new THREE.Points(
+  geoEstrellas,
+  new THREE.PointsMaterial({
+    size: 0.35, sizeAttenuation: true, vertexColors: true,
+    transparent: false, blending: THREE.AdditiveBlending, depthWrite: false,
+  })
+);
+scene.add(estrellas);
+
+// Borde del universo: un anillo muy tenue que marca hasta dónde se pueden mover las piezas.
+const bordeUniverso = new THREE.LineLoop(
+  new THREE.BufferGeometry().setFromPoints(
+    Array.from({ length: 192 }, (_, i) => new THREE.Vector3(Math.cos(i / 192 * Math.PI * 2) * RADIO_UNIVERSO, 0, Math.sin(i / 192 * Math.PI * 2) * RADIO_UNIVERSO))),
+  new THREE.LineBasicMaterial({ color: 0x1c2036, transparent: false, blending: THREE.AdditiveBlending, depthWrite: false })
+);
+scene.add(bordeUniverso);
+
+// Tamaño en píxeles de una unidad a distancia 1: lo usan las nubes de partículas.
+export function escalaPuntos() {
+  const h = renderer.getDrawingBufferSize(new THREE.Vector2()).y;
+  return h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+}
+
+// =====================================================================
+// POSTPRODUCCIÓN — look de fotografía de los 80
+// Orden: escena → bloom → filtro estrella → revelado (tono) → obturación lenta → lente y película
+// (la estela va después del revelado para que se apague parejo, y antes del grano para no arrastrarlo)
+// =====================================================================
+const vsPantalla = /* glsl */`
+  varying vec2 vUv;
+  void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+
+// Filtro estrella: toma solo los brillos fuertes y los estira en dos ejes (cuatro puntas).
+// Trabaja a un cuarto de resolución, así que cuesta muy poco.
+class FiltroEstrella extends Pass {
+  constructor() {
+    super();
+    const opt = { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false };
+    this.rtBrillos = new THREE.WebGLRenderTarget(1, 1, opt);
+    this.rtRayos = new THREE.WebGLRenderTarget(1, 1, opt);
+    this.matBrillos = new THREE.ShaderMaterial({
+      uniforms: { tDiffuse: { value: null }, uTexel: { value: new THREE.Vector2() }, uUmbral: { value: 1.0 } },
+      vertexShader: vsPantalla,
+      fragmentShader: /* glsl */`
+        uniform sampler2D tDiffuse; uniform vec2 uTexel; uniform float uUmbral; varying vec2 vUv;
+        void main() {
+          vec3 c = texture2D(tDiffuse, vUv + uTexel * vec2( 1.0,  1.0)).rgb
+                 + texture2D(tDiffuse, vUv + uTexel * vec2(-1.0,  1.0)).rgb
+                 + texture2D(tDiffuse, vUv + uTexel * vec2( 1.0, -1.0)).rgb
+                 + texture2D(tDiffuse, vUv + uTexel * vec2(-1.0, -1.0)).rgb;
+          c *= 0.25;
+          float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+          gl_FragColor = vec4(min(c * max(l - uUmbral, 0.0) / max(l, 1e-4), vec3(20.0)), 1.0);
+        }`,
+    });
+    this.matRayos = new THREE.ShaderMaterial({
+      uniforms: { tDiffuse: { value: null }, uTexel: { value: new THREE.Vector2() }, uLargo: { value: 2.0 }, uAngulo: { value: 0.0 } },
+      vertexShader: vsPantalla,
+      fragmentShader: /* glsl */`
+        uniform sampler2D tDiffuse; uniform vec2 uTexel; uniform float uLargo; uniform float uAngulo; varying vec2 vUv;
+        void main() {
+          vec2 d1 = vec2(cos(uAngulo), sin(uAngulo));
+          vec2 d2 = vec2(-d1.y, d1.x);
+          vec3 suma = vec3(0.0);
+          float w = 1.0;
+          for (int i = 1; i <= 24; i++) {
+            w *= 0.9;
+            vec2 o1 = d1 * uTexel * uLargo * float(i);
+            vec2 o2 = d2 * uTexel * uLargo * float(i);
+            suma += w * (texture2D(tDiffuse, vUv + o1).rgb + texture2D(tDiffuse, vUv - o1).rgb
+                       + texture2D(tDiffuse, vUv + o2).rgb + texture2D(tDiffuse, vUv - o2).rgb);
+          }
+          gl_FragColor = vec4(suma * 0.07, 1.0);
+        }`,
+    });
+    this.matMezcla = new THREE.ShaderMaterial({
+      uniforms: { tDiffuse: { value: null }, tRayos: { value: null }, uIntensidad: { value: 0.5 } },
+      vertexShader: vsPantalla,
+      fragmentShader: /* glsl */`
+        uniform sampler2D tDiffuse; uniform sampler2D tRayos; uniform float uIntensidad; varying vec2 vUv;
+        void main() {
+          vec4 base = texture2D(tDiffuse, vUv);
+          gl_FragColor = vec4(base.rgb + texture2D(tRayos, vUv).rgb * uIntensidad, base.a);
+        }`,
+    });
+    this.quad = new FullScreenQuad(this.matBrillos);
+  }
+  setSize(w, h) {
+    const qw = Math.max(1, Math.round(w / 4)), qh = Math.max(1, Math.round(h / 4));
+    this.rtBrillos.setSize(qw, qh);
+    this.rtRayos.setSize(qw, qh);
+    this.matBrillos.uniforms.uTexel.value.set(1 / w, 1 / h);
+    this.matRayos.uniforms.uTexel.value.set(1 / qw, 1 / qh);
+  }
+  render(renderer, writeBuffer, readBuffer) {
+    this.matBrillos.uniforms.tDiffuse.value = readBuffer.texture;
+    this.quad.material = this.matBrillos;
+    renderer.setRenderTarget(this.rtBrillos);
+    this.quad.render(renderer);
+
+    this.matRayos.uniforms.tDiffuse.value = this.rtBrillos.texture;
+    this.quad.material = this.matRayos;
+    renderer.setRenderTarget(this.rtRayos);
+    this.quad.render(renderer);
+
+    this.matMezcla.uniforms.tDiffuse.value = readBuffer.texture;
+    this.matMezcla.uniforms.tRayos.value = this.rtRayos.texture;
+    this.quad.material = this.matMezcla;
+    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    this.quad.render(renderer);
+  }
+}
+
+// Lente y película: aberración cromática en los bordes, gradación de color, viñeta y grano.
+const LentePelicula = {
+  uniforms: {
+    tDiffuse: { value: null }, uTiempo: { value: 0 },
+    uAberracion: { value: 1 }, uGradacion: { value: 0.5 }, uVineta: { value: 0.5 }, uGrano: { value: 0.06 },
+    uRGB: { value: 0 },
+  },
+  vertexShader: vsPantalla,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse; uniform float uTiempo;
+    uniform float uAberracion; uniform float uGradacion; uniform float uVineta; uniform float uGrano; uniform float uRGB;
+    varying vec2 vUv;
+    float azar(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+    void main() {
+      vec2 c = vUv - 0.5;
+      float r2 = dot(c, c);
+      // aberración cromática: los canales se separan solo hacia los bordes
+      vec2 desp = c * r2 * uAberracion * 0.03;
+      desp.x += uRGB; // desplazamiento RGB: toda la imagen, en horizontal
+      vec3 col = vec3(texture2D(tDiffuse, vUv + desp).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - desp).b);
+      // gradación: sombras magenta, medios cian, luces doradas
+      float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      vec3 sombras = vec3(1.18, 0.74, 1.14), medios = vec3(0.80, 1.08, 1.12), luces = vec3(1.14, 1.0, 0.72);
+      vec3 tinte = mix(mix(sombras, medios, smoothstep(0.0, 0.45, l)), luces, smoothstep(0.45, 1.0, l));
+      vec3 grad = col * tinte + vec3(0.030, 0.006, 0.040) * (1.0 - l); // negros un poco lavados
+      col = mix(col, grad, uGradacion);
+      // viñeta
+      col *= mix(1.0, smoothstep(0.85, 0.15, sqrt(r2)), uVineta);
+      // grano de película (más visible en las sombras)
+      float g = azar(gl_FragCoord.xy + fract(uTiempo) * 97.0) - 0.5;
+      col += g * uGrano * (1.0 - 0.5 * l);
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+};
+
+const tam = renderer.getDrawingBufferSize(new THREE.Vector2());
+export const composer = new EffectComposer(
+  renderer,
+  new THREE.WebGLRenderTarget(tam.x, tam.y, { type: THREE.HalfFloatType, samples: 4 })
+);
+const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.45, 0.65, 0.85);
+const estrella = new FiltroEstrella();
+const lente = new ShaderPass(LentePelicula);
+// Guarda: con reflejos metálicos muy intensos algún píxel puede salir infinito o inválido (NaN);
+// el bloom lo esparce como un cuadrado de color y la estela lo mantiene vivo. Esta pasada
+// barata limita el brillo y descarta esos píxeles antes de los efectos.
+const limitar = new ShaderPass({
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: vsPantalla,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main() {
+      vec4 c = texture2D(tDiffuse, vUv);
+      if (any(isnan(c.rgb))) c.rgb = vec3(0.0);
+      gl_FragColor = vec4(min(c.rgb, vec3(40.0)), c.a);
+    }`,
+});
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(limitar);
+composer.addPass(bloom);
+composer.addPass(estrella);
+composer.addPass(new OutputPass()); // revelado: tone mapping + conversión a color de pantalla
+const estela = new AfterimagePass(params.post.estela); // obturación lenta: mezcla cada cuadro con los anteriores
+composer.addPass(estela);
+composer.addPass(lente);
+
+// Pulso del desplazamiento RGB: sube de golpe y vuelve suavemente a su nivel base.
+let pulsoRGBValor = 0;
+export function pulsoRGB(fuerza = 1) { pulsoRGBValor = Math.min(pulsoRGBValor + fuerza, 1.5); }
+
+export function aplicarPost() {
+  const p = params.post;
+  bloom.strength = p.bloom.intensidad;
+  bloom.radius = p.bloom.radio;
+  bloom.threshold = p.bloom.umbral;
+  bloom.enabled = p.bloom.intensidad > 0;
+  estrella.matMezcla.uniforms.uIntensidad.value = p.estrella.intensidad;
+  estrella.matRayos.uniforms.uLargo.value = p.estrella.largo;
+  estrella.matRayos.uniforms.uAngulo.value = THREE.MathUtils.degToRad(p.estrella.angulo);
+  estrella.matBrillos.uniforms.uUmbral.value = p.estrella.umbral;
+  estrella.enabled = p.estrella.intensidad > 0;
+  lente.uniforms.uGrano.value = p.grano;
+  lente.uniforms.uVineta.value = p.vineta;
+  lente.uniforms.uAberracion.value = p.aberracion;
+  lente.uniforms.uGradacion.value = p.gradacion;
+  estela.uniforms['damp'].value = p.estela;
+  estela.enabled = p.estela > 0;
+}
+aplicarPost();
+
+export function ajustarTamanoEscena() {
+  renderer.setPixelRatio(params.general.resolucion);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setPixelRatio(params.general.resolucion);
+  composer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+}
+
+// Avanza todo lo que no depende de las piezas (destellos, estrellas, película) y dibuja el cuadro.
+export function dibujar(dt, tiempo) {
+  // los destellos orbitan despacio alrededor de las formas
+  for (const l of destellos) {
+    const u = l.userData, a = u.fase + tiempo * u.vel;
+    l.position.set(Math.cos(a) * u.radio, u.alto + Math.sin(a * 1.7) * 1.2, Math.sin(a) * u.radio);
+  }
+  estrellas.rotation.y += dt * 0.004;
+  lente.uniforms.uTiempo.value = tiempo;
+  // desplazamiento RGB: nivel base + pulso que se apaga en la duración indicada
+  const rgb = params.post.rgb;
+  pulsoRGBValor *= Math.exp(-dt * 4 / rgb.duracion);
+  lente.uniforms.uRGB.value = rgb.base + rgb.pulso * pulsoRGBValor;
+  controls.update();
+  composer.render(dt);
+}

@@ -1,0 +1,93 @@
+/* HUD: identidad aeroespacial de los 80 (migrado de preview/index.html) */
+:root { --claro: #dfe6ff; --tenue: rgba(223, 230, 255, .45); --linea: rgba(223, 230, 255, .28);
+        --magenta: #ff3fa4; --cian: #2fe6ff; --dorado: #ffc247;
+        --mio: var(--cian); /* color del tripulante: lo fija el servidor */ }
+html, body { margin: 0; height: 100%; background: #020208; overflow: hidden; }
+canvas { display: block; }
+#error { position: fixed; inset: 0; display: none; place-items: center; color: #ff9bb5;
+  font: 14px/1.6 -apple-system, "Helvetica Neue", Arial, sans-serif; text-align: center; padding: 24px; }
+
+#hud { position: fixed; inset: 0; pointer-events: none; color: var(--claro); text-transform: uppercase;
+  font: 300 10px/1.7 "IBM Plex Mono", ui-monospace, Menlo, monospace; letter-spacing: .22em; }
+#mision { position: absolute; left: 22px; top: 18px; }
+#mision h1 { margin: 0 0 9px; padding-bottom: 8px; border-bottom: 1px solid var(--linea);
+  font: 400 12px/1 "Michroma", "Helvetica Neue", Arial, sans-serif; letter-spacing: .34em; }
+#mision h1 i { font-style: normal; color: var(--magenta); }
+#telemetria { display: flex; gap: 22px; }
+#telemetria span { display: flex; flex-direction: column; }
+#telemetria b { font-weight: 300; font-size: 8px; color: var(--tenue); }
+#telemetria em { font-style: normal; font-size: 11px; }
+#telemetria span:nth-child(1) em { color: var(--dorado); }
+#telemetria span:nth-child(4) em { color: var(--cian); }
+#rastreo-linea { position: absolute; inset: 0; width: 100%; height: 100%; }
+#rastreo-linea * { fill: none; stroke: var(--acento, var(--cian)); stroke-width: 1; vector-effect: non-scaling-stroke; }
+#rastreo { position: absolute; left: 0; top: 0; min-width: 190px; padding: 7px 10px 8px;
+  border: 1px solid var(--linea); border-left: 1px solid var(--acento, var(--cian)); background: rgba(2, 2, 8, .35); }
+#rastreo h2 { margin: 0 0 4px; font: 400 10px/1.5 "Michroma", "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: .3em; color: var(--acento, var(--cian)); }
+#rastreo-datos div { display: flex; justify-content: space-between; gap: 18px; }
+#rastreo-datos div b { font-weight: 300; color: var(--tenue); }
+#rastreo-borrar { margin-top: 7px; width: 100%; }
+#registro { position: absolute; left: 22px; bottom: 18px; }
+.tit { font: 400 8px/1 "Michroma", "Helvetica Neue", Arial, sans-serif; letter-spacing: .34em; color: var(--tenue);
+  padding-bottom: 7px; margin-bottom: 6px; border-bottom: 1px solid var(--linea); }
+#registro ul { list-style: none; margin: 0; padding: 0; }
+#registro li { color: var(--tenue); }
+#registro li:last-child { color: var(--claro); }
+#registro li b { font-weight: 300; color: var(--dorado); margin-right: 12px; }
+.etiqueta { position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 9px; color: var(--tenue);
+  padding-top: 5px; border-top: 1px solid var(--linea); }
+.etiqueta b { font-weight: 400; color: var(--acento, var(--claro)); }
+#ayuda { position: absolute; right: 22px; bottom: 18px; font-size: 8px; color: var(--tenue); text-align: right; }
+
+/* ---------- Controles (V1) ---------- */
+.boton { pointer-events: auto; cursor: pointer; padding: 6px 12px; background: rgba(2, 2, 8, .35);
+  border: 1px solid var(--linea); color: var(--claro); text-transform: uppercase;
+  font: 300 10px/1.4 "IBM Plex Mono", ui-monospace, Menlo, monospace; letter-spacing: .22em;
+  transition: border-color .15s, color .15s; }
+.boton:hover { border-color: var(--mio); color: var(--mio); }
+.boton.activo { border-color: var(--dorado); color: var(--dorado); }
+.boton:disabled { opacity: .35; cursor: default; }
+.boton:focus-visible { outline: 1px solid var(--dorado); outline-offset: 2px; }
+
+#consola { margin-top: 12px; padding-top: 9px; border-top: 1px solid var(--linea); display: grid; gap: 7px; }
+#consola .fila { display: flex; align-items: center; gap: 14px; }
+#consola .fila > b { width: 52px; font-weight: 300; font-size: 8px; color: var(--tenue); }
+#c-escalas { display: flex; flex-wrap: wrap; gap: 5px; }
+#c-escalas .boton { padding: 3px 8px; font-size: 9px; }
+
+/* Deslizador de tempo: una línea fina con un marcador cuadrado dorado */
+#c-tempo { pointer-events: auto; cursor: pointer; width: 220px; margin: 0; height: 14px; background: none;
+  -webkit-appearance: none; appearance: none; }
+#c-tempo::-webkit-slider-runnable-track { height: 1px; background: var(--linea); }
+#c-tempo::-moz-range-track { height: 1px; background: var(--linea); }
+#c-tempo::-webkit-slider-thumb { -webkit-appearance: none; width: 9px; height: 9px; margin-top: -4px;
+  background: #020208; border: 1px solid var(--dorado); }
+#c-tempo::-moz-range-thumb { width: 7px; height: 7px; border-radius: 0; background: #020208; border: 1px solid var(--dorado); }
+#c-tempo:focus-visible { outline: 1px solid var(--dorado); outline-offset: 3px; }
+
+#identidad { position: absolute; right: 22px; top: 18px; text-align: right; display: flex; flex-direction: column; }
+#identidad > b { font-weight: 300; font-size: 8px; color: var(--tenue); }
+#identidad h2 { margin: 3px 0 5px; padding-bottom: 8px; border-bottom: 1px solid var(--mio);
+  font: 400 12px/1 "Michroma", "Helvetica Neue", Arial, sans-serif; letter-spacing: .34em; color: var(--mio); }
+#enlace { font-size: 8px; color: var(--tenue); }
+#enlace.vivo { color: var(--claro); }
+#enlace.caido { color: var(--magenta); }
+
+#acople { position: absolute; right: 22px; bottom: 58px; text-align: right; }
+#acople .botones { display: flex; gap: 8px; justify-content: flex-end; }
+#acople .boton { min-width: 72px; }
+
+/* el panel de ajustes (lil-gui) queda arriba a la derecha, bajo la identidad */
+.lil-gui.autoPlace { top: 92px; max-height: calc(100% - 110px); }
+
+@media (max-width: 1100px) {
+  #ayuda { display: none; }
+  #acople { bottom: 18px; }
+}
+@media (max-width: 760px) {
+  #telemetria { gap: 12px; flex-wrap: wrap; }
+  #c-tempo { width: 150px; }
+  #identidad { top: auto; bottom: 86px; }
+  #registro { display: none; }
+}
