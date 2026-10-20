@@ -162,13 +162,75 @@ export const estrellas = new THREE.Points(
 );
 scene.add(estrellas);
 
-// Borde del universo: un anillo muy tenue que marca hasta dónde se pueden mover las piezas.
-const bordeUniverso = new THREE.LineLoop(
-  new THREE.BufferGeometry().setFromPoints(
-    Array.from({ length: 192 }, (_, i) => new THREE.Vector3(Math.cos(i / 192 * Math.PI * 2) * RADIO_UNIVERSO, 0, Math.sin(i / 192 * Math.PI * 2) * RADIO_UNIVERSO))),
-  new THREE.LineBasicMaterial({ color: 0x1c2036, transparent: false, blending: THREE.AdditiveBlending, depthWrite: false })
-);
-scene.add(bordeUniverso);
+// =====================================================================
+// REFERENCIA DEL CENTRO — guía tipo radar en el plano donde se mueven las piezas.
+// Anillos cada 3 unidades: como el volumen baja en línea recta hasta el borde (12), marcan
+// 100 · 75 · 50 · 25 · 0 %. El eje X marca el paneo: llega al extremo en ±6 (marcas I y D).
+// Todo se dibuja opaco con mezcla aditiva (como las estrellas) para verse también a través del vidrio.
+// =====================================================================
+const lineaGuia = (puntos, brillo, cerrada = false) => {
+  const material = new THREE.LineBasicMaterial({
+    color: new THREE.Color(0.55, 0.6, 0.85).multiplyScalar(brillo),
+    transparent: false, blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const geo = new THREE.BufferGeometry().setFromPoints(puntos);
+  return cerrada ? new THREE.LineLoop(geo, material) : new THREE.LineSegments(geo, material);
+};
+const circulo = (r, n = 192) => Array.from({ length: n }, (_, i) => new THREE.Vector3(Math.cos(i / n * Math.PI * 2) * r, 0, Math.sin(i / n * Math.PI * 2) * r));
+export const referencia = new THREE.Group();
+// anillos: más tenues hacia afuera, como el volumen
+for (const r of [3, 6, 9, RADIO_UNIVERSO]) referencia.add(lineaGuia(circulo(r), 0.16 - r * 0.007, true));
+// eje del paneo (X) y eje de profundidad (Z), muy tenues; marcas cortas en cada anillo sobre el eje X
+const ejes = [
+  new THREE.Vector3(-RADIO_UNIVERSO, 0, 0), new THREE.Vector3(RADIO_UNIVERSO, 0, 0),
+  new THREE.Vector3(0, 0, -RADIO_UNIVERSO), new THREE.Vector3(0, 0, RADIO_UNIVERSO),
+];
+const marcas = [];
+for (const x of [-9, -6, -3, 3, 6, 9]) {
+  const largo = Math.abs(x) === RADIO_PANEO ? 0.45 : 0.2; // el extremo del paneo (±6) se marca más largo
+  marcas.push(new THREE.Vector3(x, 0, -largo), new THREE.Vector3(x, 0, largo));
+}
+referencia.add(lineaGuia(ejes, 0.05), lineaGuia(marcas, 0.14));
+// punto luminoso tenue en el centro: un resplandor redondo (degradado radial), no un cuadrado
+function texturaResplandor() {
+  const lienzo = document.createElement('canvas');
+  lienzo.width = lienzo.height = 64;
+  const ctx = lienzo.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, '#fff'); g.addColorStop(0.15, 'rgba(255,255,255,.6)'); g.addColorStop(0.5, 'rgba(255,255,255,.08)'); g.addColorStop(1, '#000');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(lienzo);
+}
+const geoCentro = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0)]);
+const centro = new THREE.Points(geoCentro, new THREE.PointsMaterial({
+  map: texturaResplandor(), color: new THREE.Color(0.7, 0.78, 1).multiplyScalar(0.55), size: 0.7, sizeAttenuation: true,
+  transparent: false, blending: THREE.AdditiveBlending, depthWrite: false,
+}));
+referencia.add(centro);
+scene.add(referencia);
+// posiciones de las marcas de texto I y D (las dibuja el HUD en main.js)
+// van sobre el eje del paneo, hacia adentro del extremo (±6), para que se vean con la cámara frontal
+export const MARCAS_PANEO = { I: new THREE.Vector3(-4.5, 0, 0.6), D: new THREE.Vector3(4.5, 0, 0.6) };
+
+// =====================================================================
+// RECENTRAR — vuelve la cámara a la vista frontal inicial con una transición suave
+// =====================================================================
+const VISTA_INICIAL = { posicion: camera.position.clone(), objetivo: new THREE.Vector3(0, 0, 0) };
+let transicion = null; // { desde, hasta, objetivoDesde, t }
+export function recentrar() {
+  transicion = { desde: camera.position.clone(), objetivoDesde: controls.target.clone(), t: 0 };
+  controls.enabled = false;
+  controls.enableDamping = false; // sin la inercia de la órbita anterior, que empujaría la cámara
+}
+function avanzarTransicion(dt) {
+  if (!transicion) return;
+  transicion.t = Math.min(transicion.t + dt / 1.1, 1); // 1,1 s
+  const k = transicion.t < 0.5 ? 4 * transicion.t ** 3 : 1 - (-2 * transicion.t + 2) ** 3 / 2; // suavizado de entrada y salida
+  camera.position.lerpVectors(transicion.desde, VISTA_INICIAL.posicion, k);
+  controls.target.lerpVectors(transicion.objetivoDesde, VISTA_INICIAL.objetivo, k);
+  if (transicion.t >= 1) { transicion = null; controls.enabled = true; controls.enableDamping = true; }
+}
 
 // Tamaño en píxeles de una unidad a distancia 1: lo usan las nubes de partículas.
 export function escalaPuntos() {
@@ -379,6 +441,7 @@ export function dibujar(dt, tiempo) {
   const rgb = params.post.rgb;
   pulsoRGBValor *= Math.exp(-dt * 4 / rgb.duracion);
   lente.uniforms.uRGB.value = rgb.base + rgb.pulso * pulsoRGBValor;
+  avanzarTransicion(dt);
   controls.update();
   composer.render(dt);
 }

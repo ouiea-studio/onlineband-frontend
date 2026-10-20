@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { io } from 'socket.io-client';
 import {
   camera, controls, renderer, scene, params, RADIO_PANEO, RADIO_UNIVERSO,
-  pulsoRGB, dibujar, ajustarTamanoEscena,
+  pulsoRGB, dibujar, ajustarTamanoEscena, recentrar, MARCAS_PANEO,
 } from './escena.js';
 import {
   cargarPlantillas, crearGema, destruirGema, colorearGema, animarGema, golpearGema,
@@ -270,6 +270,14 @@ window.addEventListener('keydown', (ev) => {
   if (seleccion && esMia(seleccion)) { ev.preventDefault(); desacoplar(seleccion); }
 });
 
+// Recentrar: botón y tecla C llevan la cámara a la vista frontal inicial.
+document.getElementById('b-recentrar').addEventListener('click', recentrar);
+window.addEventListener('keydown', (ev) => {
+  if (ev.key.toLowerCase() !== 'c' || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (ev.target.closest?.('input, textarea')) return;
+  recentrar();
+});
+
 // =====================================================================
 // AUDIO — botón ESCUCHAR / SILENCIAR (personal) y reacción visual a cada paso
 // =====================================================================
@@ -525,10 +533,16 @@ function actualizarRastreo() {
 // el botón de desacoplar es lo único clicable dentro de la etiqueta de rastreo
 elRastreo.style.pointerEvents = 'none';
 
-// Etiquetas fijas debajo de cada gema
+// Etiquetas fijas debajo de cada gema, y marcas I / D del paneo sobre el plano
 const bajoPieza = new THREE.Vector3();
+const elMarcas = { I: document.getElementById('marca-i'), D: document.getElementById('marca-d') };
 function actualizarEtiquetas() {
   const W = window.innerWidth, H = window.innerHeight;
+  for (const lado in elMarcas) {
+    bajoPieza.copy(MARCAS_PANEO[lado]).project(camera);
+    elMarcas[lado].style.display = bajoPieza.z > 1 ? 'none' : '';
+    elMarcas[lado].style.transform = 'translate(' + Math.round((bajoPieza.x * 0.5 + 0.5) * W) + 'px,' + Math.round((-bajoPieza.y * 0.5 + 0.5) * H) + 'px) translate(-50%, -50%)';
+  }
   for (const p of piezas.values()) {
     bajoPieza.copy(p.gema.grupo.position); bajoPieza.y -= 1.0;
     bajoPieza.project(camera);

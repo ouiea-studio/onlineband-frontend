@@ -102,6 +102,6 @@
     "aberracion": 1.35,
     "gradacion": 0.16,
     "estela": 0.15,
-    "rgb": { "base": 0.0014, "pulso": 0.016, "duracion": 1.05 }
+    "rgb": { "base": 0.0005, "pulso": 0.005, "duracion": 0.31 }
   }
 }

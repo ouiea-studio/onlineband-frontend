@@ -29,7 +29,9 @@ Hay un ejemplo en `.env.example`. Como es una variable de Vite, se lee al constr
 
 - **ESCUCHAR / SILENCIAR** (arriba a la derecha): el primer clic enciende el audio; después silencia solo lo que escuchas tú.
 - **PERC, ARM, MEL** (abajo a la derecha): acoplar un módulo; llega con un patrón que suena de inmediato.
-- **Clic en una pieza propia**: abre su editor (pasos, subdivisión, cuadrícula de notas y parámetros).
+- **Clic en una pieza propia**: abre su editor (pasos, subdivisión, cuadrícula de notas, ALEATORIO, parámetros, resonancia y envíos a la reverb y al delay compartidos).
+- **RECENTRAR** o tecla **C**: vuelve la cámara a la vista inicial.
+- Los anillos del plano marcan el volumen (más cerca del centro, más fuerte) y las marcas **I** / **D** el paneo.
 - **Arrastrar** una pieza propia: moverla; el paneo y el volumen dependen de su posición.
 - **Supr** o el botón de la etiqueta: desacoplar la pieza seleccionada.
 - **Tempo y escala** (arriba a la izquierda): cambian para todos.
@@ -44,6 +46,7 @@ Todos los valores por defecto (material, nubes, gelatina, postproducción) está
 - `src/main.js`: conexión con el servidor, estado de la sala e interacción.
 - `src/audio.js`: sonido con Tone.js (Transport, escalas, instrumentos y mezcla espacial).
 - `src/editor.js`: editor de pasos y parámetros de cada instrumento.
+- `src/azar.js`: patrones aleatorios con criterio musical (botón ALEATORIO).
 - `src/escena.js`: render, cámara, luces, entornos de reflejo y postproducción.
 - `src/gemas.js`: material de vidrio, movimiento gelatinoso y nube interior.
 - `src/hud.js` y `src/estilo.css`: HUD y telemetría.

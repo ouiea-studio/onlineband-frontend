@@ -77,6 +77,9 @@ canvas { display: block; }
 #b-audio.sonando { border-color: var(--mio); color: var(--mio); }
 
 #acople { position: absolute; right: 22px; bottom: 58px; text-align: right; }
+#vista { position: absolute; right: 22px; bottom: 128px; }
+.marca-paneo { position: absolute; left: 0; top: 0; font: 400 10px/1 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color: var(--tenue); opacity: .7; }
 #acople .botones { display: flex; gap: 8px; justify-content: flex-end; }
 #acople .boton { min-width: 72px; }
 
@@ -91,11 +94,12 @@ canvas { display: block; }
 .editor { pointer-events: auto; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--linea);
   display: grid; gap: 6px; font-size: 9px; }
 .ed-fila { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.ed-fila > b { width: 66px; font-weight: 300; font-size: 8px; color: var(--tenue); }
+.ed-fila > b { width: 84px; font-weight: 300; font-size: 8px; color: var(--tenue); white-space: nowrap; }
 .ed-valor { min-width: 34px; text-align: right; color: var(--claro); }
 .editor .boton { padding: 2px 7px; font-size: 9px; letter-spacing: .16em; }
 .editor .ed-mini { padding: 0 7px; }
-.editor .deslizador { width: 150px; }
+.editor .ed-aleatorio { margin-left: auto; }
+.editor .deslizador { width: 140px; }
 .ed-params { display: grid; gap: 3px; padding-top: 4px; }
 .ed-rejilla { display: grid; grid-template-columns: repeat(var(--pasos), var(--celda)); gap: 2px; padding: 4px 0;
   cursor: pointer; touch-action: none; }
@@ -110,6 +114,7 @@ canvas { display: block; }
 @media (max-width: 1100px) {
   #ayuda { display: none; }
   #acople { bottom: 18px; }
+  #vista { bottom: 88px; }
 }
 @media (max-width: 760px) {
   #telemetria { gap: 12px; flex-wrap: wrap; }

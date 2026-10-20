@@ -3,6 +3,8 @@
 //
 // Cadena de cada instrumento: sintetizador → filtro → volumen (parámetro) → paneo → volumen
 // espacial (distancia al centro) → bus maestro → limitador → salida.
+// Desde el volumen espacial salen además dos envíos hacia efectos compartidos en el bus:
+// una reverb larga (~4 s) y un delay en corchea con puntillo sincronizado al tempo.
 
 import * as Tone from 'tone';
 
@@ -28,6 +30,7 @@ let escala = { tonica: 'C', modo: 'menor' };
 let tempo = 120;
 let iniciado = false;
 let bus = null;
+let efectos = null; // { reverb, delay } compartidos por todos los instrumentos
 let alPaso = () => {}; // reacción visual: (id, paso, sono, tipo)
 
 const instrumentos = new Map(); // id → datos del instrumento (siempre los últimos)
@@ -77,9 +80,14 @@ function crearVoz(inst) {
     volumen: new Tone.Volume(-100),
     panner: new Tone.Panner(0),
     espacio: new Tone.Gain(0),
+    envioReverb: new Tone.Gain(0),
+    envioDelay: new Tone.Gain(0),
     synth: null, sonido: null, subdivision: null, loop: null,
   };
   voz.filtro.chain(voz.volumen, voz.panner, voz.espacio, bus);
+  voz.espacio.fan(voz.envioReverb, voz.envioDelay); // envíos después del paneo: el eco conserva el lado
+  voz.envioReverb.connect(efectos.reverb);
+  voz.envioDelay.connect(efectos.delay);
   if (inst.tipo === 'armonia') {
     voz.synth = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sawtooth' } });
     voz.synth.connect(voz.filtro);
@@ -116,14 +124,19 @@ function aplicarVoz(id) {
     voz.volumen.volume.rampTo(aDb(p.volumen, NIVEL[p.sonido]), 0.05);
   } else {
     const envolvente = { attack: p.ataque, decay: p.decaimiento, sustain: p.sostenido, release: p.relajacion };
+    const q = p.resonancia ?? (inst.tipo === 'armonia' ? 1 : 2);
     if (inst.tipo === 'armonia') {
       voz.synth.set({ envelope: envolvente });
       voz.filtro.frequency.rampTo(p.cutoff, 0.05);
+      voz.filtro.Q.rampTo(q, 0.05);
     } else {
       voz.synth.set({ envelope: envolvente, portamento: p.glide, filterEnvelope: { baseFrequency: p.cutoff } });
+      voz.synth.filter.Q.rampTo(q, 0.05);
     }
     voz.volumen.volume.rampTo(aDb(p.volumen, NIVEL[inst.tipo]), 0.05);
   }
+  voz.envioReverb.gain.rampTo(p.envioReverb ?? 0, 0.05);
+  voz.envioDelay.gain.rampTo(p.envioDelay ?? 0, 0.05);
 }
 
 // Cuántos segundos dura una nota: hasta el siguiente paso con nota (legato), como mucho una vuelta.
@@ -173,7 +186,7 @@ function quitarVozNodos(id) {
   // se da tiempo a que terminen las colas de las notas antes de desconectar
   voz.espacio.gain.rampTo(0, 0.05);
   setTimeout(() => {
-    for (const nodo of [voz.synth, voz.filtro, voz.volumen, voz.panner, voz.espacio]) nodo?.dispose();
+    for (const nodo of [voz.synth, voz.filtro, voz.volumen, voz.panner, voz.espacio, voz.envioReverb, voz.envioDelay]) nodo?.dispose();
   }, 300);
   voces.delete(id);
 }
@@ -184,6 +197,24 @@ function quitarVozNodos(id) {
 
 export const audioIniciado = () => iniciado;
 
+// Efectos compartidos en el bus maestro. Cada instrumento decide cuánto les envía.
+const segundosDelay = (bpm) => (60 / bpm) * 0.75; // corchea con puntillo = 3/4 de negra
+function crearEfectos() {
+  // reverb larga y espacial; el pasaaltos evita que los graves la emborronen.
+  // decay 12 en Tone.js da una cola real de unos 3,5–4 s (cae ~17 dB por segundo, medido):
+  // el decay de Tone es el largo de la respuesta al impulso, no el tiempo que se oye la cola.
+  const reverb = new Tone.Reverb({ decay: 12, preDelay: 0.03, wet: 1 });
+  const corteReverb = new Tone.Filter(180, 'highpass');
+  const retornoReverb = new Tone.Gain(0.7);
+  reverb.chain(corteReverb, retornoReverb, bus);
+  // delay en corchea con puntillo, feedback moderado; el pasabajos oscurece cada repetición
+  const delay = new Tone.FeedbackDelay({ delayTime: segundosDelay(tempo), feedback: 0.35, wet: 1, maxDelay: 2 });
+  const corteDelay = new Tone.Filter(3500, 'lowpass');
+  const retornoDelay = new Tone.Gain(0.55);
+  delay.chain(corteDelay, retornoDelay, bus);
+  return { reverb, delay };
+}
+
 // Primer clic del usuario: los navegadores exigen un gesto para encender el audio.
 export async function iniciarAudio() {
   if (iniciado) return;
@@ -193,6 +224,8 @@ export async function iniciarAudio() {
   transport.bpm.value = tempo;
   bus = new Tone.Gain(0.8);
   bus.chain(new Tone.Limiter(-1), Tone.getDestination()); // el limitador evita saturar con muchos instrumentos
+  efectos = crearEfectos();
+  await efectos.reverb.ready; // la reverb calcula su respuesta al impulso al crearse
   iniciado = true;
   for (const id of instrumentos.keys()) crearVoz(instrumentos.get(id));
   transport.start('+0.1');
@@ -206,7 +239,9 @@ export function fijarReaccion(fn) { alPaso = fn; }
 
 export function fijarTempo(bpm) {
   tempo = bpm;
-  if (iniciado) Tone.getTransport().bpm.rampTo(bpm, 0.15);
+  if (!iniciado) return;
+  Tone.getTransport().bpm.rampTo(bpm, 0.15);
+  efectos.delay.delayTime.rampTo(segundosDelay(bpm), 0.15); // el delay sigue al tempo
 }
 
 export function fijarEscala(nueva) { escala = { ...nueva }; }

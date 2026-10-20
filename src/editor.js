@@ -6,26 +6,30 @@ const SUBDIVISIONES = [['corchea', 'Corchea'], ['semicorchea', 'Semicorchea'], [
 const PASOS_POR_PULSO = { corchea: 2, semicorchea: 4, tresillo: 3, quintillo: 5 };
 const GRADOS = 7;
 
+import { patronAleatorio } from './azar.js';
+
 // Controles por tipo. Deslizadores: [clave, etiqueta, mínimo, máximo, paso, escala logarítmica].
 const ADSR = [
   ['ataque', 'Ataque', 0.001, 2, 0.001], ['decaimiento', 'Decaim.', 0.01, 2, 0.01],
   ['sostenido', 'Sostenido', 0, 1, 0.01], ['relajacion', 'Relajac.', 0.01, 4, 0.01],
 ];
+const ENVIOS = [['envioReverb', 'Env. reverb', 0, 1, 0.01], ['envioDelay', 'Env. delay', 0, 1, 0.01]];
+const FILTRO = [['cutoff', 'Cutoff', 100, 12000, 1, true], ['resonancia', 'Resonancia', 0.1, 18, 0.1]];
 const CONTROLES = {
   percusion: {
     opciones: [['sonido', 'Sonido', [['kick', 'Kick'], ['snare', 'Snare'], ['hat', 'Hat'], ['perc', 'Perc']]]],
-    deslizadores: [['pitch', 'Pitch', -12, 12, 1], ['decay', 'Decay', 0.02, 1.5, 0.01], ['volumen', 'Volumen', 0, 1, 0.01]],
+    deslizadores: [['pitch', 'Pitch', -12, 12, 1], ['decay', 'Decay', 0.02, 1.5, 0.01], ['volumen', 'Volumen', 0, 1, 0.01], ...ENVIOS],
   },
   armonia: {
     opciones: [
       ['acorde', 'Acorde', [['triada', 'Tríada'], ['septima', 'Séptima'], ['sus', 'Sus']]],
       ['inversion', 'Inversión', [[0, '0'], [1, '1'], [2, '2']]],
     ],
-    deslizadores: [...ADSR, ['cutoff', 'Cutoff', 100, 12000, 1, true], ['volumen', 'Volumen', 0, 1, 0.01]],
+    deslizadores: [...ADSR, ...FILTRO, ['volumen', 'Volumen', 0, 1, 0.01], ...ENVIOS],
   },
   melodia: {
     opciones: [],
-    deslizadores: [...ADSR, ['cutoff', 'Cutoff', 100, 12000, 1, true], ['glide', 'Glide', 0, 0.5, 0.005], ['volumen', 'Volumen', 0, 1, 0.01]],
+    deslizadores: [...ADSR, ...FILTRO, ['glide', 'Glide', 0, 0.5, 0.005], ['volumen', 'Volumen', 0, 1, 0.01], ...ENVIOS],
   },
 };
 // Decay típico de cada sonido de percusión: se aplica al cambiar de sonido.
@@ -54,7 +58,14 @@ export function crearEditor(contenedor, obtener, acciones) {
   menos.type = mas.type = 'button';
   menos.addEventListener('click', () => acciones.estructura({ pasos: Math.max(1, obtener().pasos - 1) }));
   mas.addEventListener('click', () => acciones.estructura({ pasos: Math.min(32, obtener().pasos + 1) }));
-  filaPasos.append(crear('b', '', 'Pasos'), menos, numPasos, mas);
+  // ALEATORIO: un patrón nuevo con criterio musical (azar.js), enviado como cualquier edición
+  const aleatorio = crear('button', 'boton ed-op ed-aleatorio', 'Aleatorio');
+  aleatorio.type = 'button';
+  aleatorio.addEventListener('click', () => {
+    acciones.editar({ patron: patronAleatorio(obtener()) }, true);
+    pintarRejilla();
+  });
+  filaPasos.append(crear('b', '', 'Pasos'), menos, numPasos, mas, aleatorio);
 
   const filaSub = crear('div', 'ed-fila');
   filaSub.append(crear('b', '', 'Subdiv.'));
@@ -153,6 +164,8 @@ export function crearEditor(contenedor, obtener, acciones) {
     controles.push({
       refrescar: (p) => {
         if (document.activeElement === entrada) return; // no pisar lo que se está arrastrando
+        if (p[clave] === undefined) { fila.hidden = true; return; } // instrumento creado antes de este control
+        fila.hidden = false;
         entrada.value = aEntrada(p[clave]);
         valor.textContent = formato(p[clave], log ? 1 : paso);
       },
