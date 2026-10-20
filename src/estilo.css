@@ -56,15 +56,15 @@ canvas { display: block; }
 #c-escalas { display: flex; flex-wrap: wrap; gap: 5px; }
 #c-escalas .boton { padding: 3px 8px; font-size: 9px; }
 
-/* Deslizador de tempo: una línea fina con un marcador cuadrado dorado */
-#c-tempo { pointer-events: auto; cursor: pointer; width: 220px; margin: 0; height: 14px; background: none;
+/* Deslizadores (tempo y parámetros): una línea fina con un marcador cuadrado dorado */
+#c-tempo, .deslizador { pointer-events: auto; cursor: pointer; width: 220px; margin: 0; height: 14px; background: none;
   -webkit-appearance: none; appearance: none; }
-#c-tempo::-webkit-slider-runnable-track { height: 1px; background: var(--linea); }
-#c-tempo::-moz-range-track { height: 1px; background: var(--linea); }
-#c-tempo::-webkit-slider-thumb { -webkit-appearance: none; width: 9px; height: 9px; margin-top: -4px;
+#c-tempo::-webkit-slider-runnable-track, .deslizador::-webkit-slider-runnable-track { height: 1px; background: var(--linea); }
+#c-tempo::-moz-range-track, .deslizador::-moz-range-track { height: 1px; background: var(--linea); }
+#c-tempo::-webkit-slider-thumb, .deslizador::-webkit-slider-thumb { -webkit-appearance: none; width: 9px; height: 9px; margin-top: -4px;
   background: #020208; border: 1px solid var(--dorado); }
-#c-tempo::-moz-range-thumb { width: 7px; height: 7px; border-radius: 0; background: #020208; border: 1px solid var(--dorado); }
-#c-tempo:focus-visible { outline: 1px solid var(--dorado); outline-offset: 3px; }
+#c-tempo::-moz-range-thumb, .deslizador::-moz-range-thumb { width: 7px; height: 7px; border-radius: 0; background: #020208; border: 1px solid var(--dorado); }
+#c-tempo:focus-visible, .deslizador:focus-visible { outline: 1px solid var(--dorado); outline-offset: 3px; }
 
 #identidad { position: absolute; right: 22px; top: 18px; text-align: right; display: flex; flex-direction: column; }
 #identidad > b { font-weight: 300; font-size: 8px; color: var(--tenue); }
@@ -73,6 +73,8 @@ canvas { display: block; }
 #enlace { font-size: 8px; color: var(--tenue); }
 #enlace.vivo { color: var(--claro); }
 #enlace.caido { color: var(--magenta); }
+#b-audio { margin-top: 9px; align-self: flex-end; min-width: 120px; }
+#b-audio.sonando { border-color: var(--mio); color: var(--mio); }
 
 #acople { position: absolute; right: 22px; bottom: 58px; text-align: right; }
 #acople .botones { display: flex; gap: 8px; justify-content: flex-end; }
@@ -80,6 +82,30 @@ canvas { display: block; }
 
 /* el panel de ajustes (lil-gui) queda arriba a la derecha, bajo la identidad */
 .lil-gui.autoPlace { top: 92px; max-height: calc(100% - 110px); }
+
+/* ---------- Editor del instrumento (dentro de la etiqueta de rastreo) ---------- */
+#rastreo-editor:empty { display: none; }
+/* con el editor abierto la etiqueta queda encima de todo y con fondo más opaco, para leerse sobre las gemas */
+#rastreo { z-index: 2; }
+#rastreo:has(.editor) { background: rgba(2, 2, 8, .82); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.editor { pointer-events: auto; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--linea);
+  display: grid; gap: 6px; font-size: 9px; }
+.ed-fila { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ed-fila > b { width: 66px; font-weight: 300; font-size: 8px; color: var(--tenue); }
+.ed-valor { min-width: 34px; text-align: right; color: var(--claro); }
+.editor .boton { padding: 2px 7px; font-size: 9px; letter-spacing: .16em; }
+.editor .ed-mini { padding: 0 7px; }
+.editor .deslizador { width: 150px; }
+.ed-params { display: grid; gap: 3px; padding-top: 4px; }
+.ed-rejilla { display: grid; grid-template-columns: repeat(var(--pasos), var(--celda)); gap: 2px; padding: 4px 0;
+  cursor: pointer; touch-action: none; }
+.ed-celda { height: 9px; border: 1px solid rgba(223, 230, 255, .14); background: rgba(2, 2, 8, .4); }
+.ed-una-fila .ed-celda { height: 16px; }
+.ed-celda.ed-pulso { border-color: rgba(223, 230, 255, .32); }
+.ed-celda.ed-actual { background: rgba(223, 230, 255, .14); }
+.ed-celda.ed-on { background: var(--acento, var(--cian)); border-color: var(--acento, var(--cian)); }
+.ed-celda.ed-on.ed-actual { background: var(--claro); }
+#rastreo-datos .ed-info { color: var(--tenue); }
 
 @media (max-width: 1100px) {
   #ayuda { display: none; }

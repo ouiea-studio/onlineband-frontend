@@ -2,7 +2,7 @@
 
 Interfaz de **OnlineBandApp**, una app web de creación musical colectiva en tiempo real. Cada persona entra a una sala global como tripulante y acopla instrumentos (percusión, armonía y melodía), que se ven como gemas de vidrio metálico flotando en el espacio exterior, con estética de fotografía de los 80 y un HUD aeroespacial.
 
-Hecho con Vite, Three.js y Socket.IO (el sonido con Tone.js llegará en la V2). Necesita el servidor [onlineband-backend](https://github.com/ouiea-studio/onlineband-backend).
+Hecho con Vite, Three.js, Socket.IO y Tone.js. Cada navegador genera la mezcla completa a partir del estado compartido: no se transmite audio. Necesita el servidor [onlineband-backend](https://github.com/ouiea-studio/onlineband-backend).
 
 ## Correrlo en local
 
@@ -27,7 +27,9 @@ Hay un ejemplo en `.env.example`. Como es una variable de Vite, se lee al constr
 
 ## Cómo se usa
 
-- **PERC, ARM, MEL** (abajo a la derecha): acoplar un módulo.
+- **ESCUCHAR / SILENCIAR** (arriba a la derecha): el primer clic enciende el audio; después silencia solo lo que escuchas tú.
+- **PERC, ARM, MEL** (abajo a la derecha): acoplar un módulo; llega con un patrón que suena de inmediato.
+- **Clic en una pieza propia**: abre su editor (pasos, subdivisión, cuadrícula de notas y parámetros).
 - **Arrastrar** una pieza propia: moverla; el paneo y el volumen dependen de su posición.
 - **Supr** o el botón de la etiqueta: desacoplar la pieza seleccionada.
 - **Tempo y escala** (arriba a la izquierda): cambian para todos.
@@ -40,6 +42,8 @@ Todos los valores por defecto (material, nubes, gelatina, postproducción) está
 ## Archivos
 
 - `src/main.js`: conexión con el servidor, estado de la sala e interacción.
+- `src/audio.js`: sonido con Tone.js (Transport, escalas, instrumentos y mezcla espacial).
+- `src/editor.js`: editor de pasos y parámetros de cada instrumento.
 - `src/escena.js`: render, cámara, luces, entornos de reflejo y postproducción.
 - `src/gemas.js`: material de vidrio, movimiento gelatinoso y nube interior.
 - `src/hud.js` y `src/estilo.css`: HUD y telemetría.

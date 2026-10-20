@@ -31,11 +31,14 @@
       <b>Identificador</b>
       <h2 id="mi-indicativo">Enlazando…</h2>
       <span id="enlace">Enlace · buscando estación</span>
+      <!-- Primer clic: enciende el audio (los navegadores lo exigen). Después: silencio personal. -->
+      <button id="b-audio" class="boton" type="button">Escuchar</button>
     </div>
 
     <svg id="rastreo-linea"><polyline id="r-linea"></polyline><circle id="r-punto" r="6"></circle></svg>
     <div id="rastreo" hidden>
       <div id="rastreo-datos"></div>
+      <div id="rastreo-editor"></div>
       <button id="rastreo-borrar" class="boton" type="button" hidden>Desacoplar · Supr</button>
     </div>
 

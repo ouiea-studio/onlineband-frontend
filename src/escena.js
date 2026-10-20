@@ -334,7 +334,8 @@ composer.addPass(lente);
 
 // Pulso del desplazamiento RGB: sube de golpe y vuelve suavemente a su nivel base.
 let pulsoRGBValor = 0;
-export function pulsoRGB(fuerza = 1) { pulsoRGBValor = Math.min(pulsoRGBValor + fuerza, 1.5); }
+// Cada pulso fija un nivel (no se suma): con percusión rápida el efecto late en vez de quedarse fijo.
+export function pulsoRGB(fuerza = 1) { pulsoRGBValor = Math.max(pulsoRGBValor, Math.min(fuerza, 1.5)); }
 
 export function aplicarPost() {
   const p = params.post;

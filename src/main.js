@@ -1,6 +1,7 @@
-// OnlineBandApp · V1 del frontend.
-// Conecta con el servidor, mantiene una copia local de la sala y la dibuja como gemas en el universo.
-// Cada tripulante solo puede mover y desacoplar sus propias piezas; tempo y escala son de todos.
+// OnlineBandApp · frontend (V2: sonido).
+// Conecta con el servidor, mantiene una copia local de la sala, la dibuja como gemas en el universo
+// y la hace sonar con Tone.js (audio.js). Cada tripulante solo puede mover, editar y desacoplar
+// sus propias piezas; tempo y escala son de todos.
 
 import './estilo.css';
 import * as THREE from 'three';
@@ -18,6 +19,8 @@ import {
   CURSOR_RETICULA, CURSOR_MODULO, CURSOR_AJENO,
 } from './hud.js';
 import { crearPanel } from './panel.js';
+import { crearEditor } from './editor.js';
+import * as audio from './audio.js';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -26,7 +29,9 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 // =====================================================================
 const sala = { tempo: 120, escala: { tonica: 'C', modo: 'menor' }, tripulantes: new Map() };
 let yo = null; // { id, indicativo, color } asignado por el servidor
-const piezas = new Map(); // id → { id, tipo, dueno, gema, etiqueta, destino, semilla }
+// id → { id, tipo, dueno, inst (datos completos del servidor), gema, etiqueta, destino, semilla,
+//        actividad (notas recientes), ladeo (inclinación aleatoria), mezcla (último paneo/volumen) }
+const piezas = new Map();
 
 const colorDe = (id) => sala.tripulantes.get(id)?.color || '#dfe6ff';
 const indicativoDe = (id) => sala.tripulantes.get(id)?.indicativo || 'Tripulante --';
@@ -47,20 +52,30 @@ function textoEtiqueta(p) {
 
 function agregarPieza(inst) {
   const existente = piezas.get(inst.id);
-  if (existente) { existente.destino.set(inst.x, 0, inst.z); return existente; }
+  if (existente) { existente.destino.set(inst.x, 0, inst.z); actualizarDatos(existente, inst); return existente; }
   const gema = crearGema(inst.tipo, colorDe(inst.dueno));
   gema.grupo.position.set(inst.x, 0, inst.z);
   const etiqueta = document.createElement('div');
   etiqueta.className = 'etiqueta';
   elHud.appendChild(etiqueta);
   const p = {
-    id: inst.id, tipo: inst.tipo, dueno: inst.dueno, gema, etiqueta,
+    id: inst.id, tipo: inst.tipo, dueno: inst.dueno, inst, gema, etiqueta,
     destino: new THREE.Vector3(inst.x, 0, inst.z), semilla: Math.random(),
+    actividad: 0, ladeo: new THREE.Vector2(), mezcla: null,
   };
   textoEtiqueta(p);
   piezas.set(p.id, p);
+  audio.ponerInstrumento(inst);
   golpearGema(gema, 0.8); // al acoplarse, la pieza rebota
   return p;
+}
+
+// Datos nuevos del servidor (patrón, parámetros, pasos…) → audio y editor.
+function actualizarDatos(p, inst) {
+  p.inst = inst;
+  audio.ponerInstrumento(inst);
+  if (editor && seleccion === p) editor.refrescar();
+  if (seleccion === p) textoRastreo = '';
 }
 
 function quitarPieza(id) {
@@ -71,6 +86,8 @@ function quitarPieza(id) {
   destruirGema(p.gema);
   p.etiqueta.remove();
   piezas.delete(id);
+  audio.quitarInstrumento(id);
+  edicionesPendientes.delete(id);
 }
 
 // Reemplaza todo lo local por el estado completo (al unirse y al reconectar).
@@ -153,7 +170,11 @@ socket.on('instrumento:eliminado', ({ id }) => {
   registrar(MODULOS[p.tipo] + ' desacoplado · ' + indicativoDe(p.dueno));
   quitarPieza(id);
 });
-// Patrones y parámetros llegan con 'instrumento:editado'; se usarán en la V2 (sonido).
+// Patrones, pasos y parámetros: llegan completos y el audio los usa desde el siguiente paso.
+socket.on('instrumento:editado', (inst) => {
+  const p = piezas.get(inst.id);
+  if (p) actualizarDatos(p, inst);
+});
 
 let avisoTempo = null; // el registro espera a que el tempo deje de moverse
 socket.on('tempo:cambiado', ({ tempo, por }) => {
@@ -188,6 +209,8 @@ const botonesEscala = ESCALAS.map((e) => {
 });
 
 function refrescarTelemetria() {
+  audio.fijarTempo(sala.tempo);   // el Transport sigue al tempo del servidor en vivo
+  audio.fijarEscala(sala.escala); // los patrones guardan grados: se reinterpretan en la escala nueva
   elBpm.textContent = Math.round(sala.tempo);
   elEscala.textContent = nombreEscala(sala.escala);
   elTripulantes.textContent = dosCifras(sala.tripulantes.size);
@@ -248,6 +271,85 @@ window.addEventListener('keydown', (ev) => {
 });
 
 // =====================================================================
+// AUDIO — botón ESCUCHAR / SILENCIAR (personal) y reacción visual a cada paso
+// =====================================================================
+const elAudio = document.getElementById('b-audio');
+function pintarBotonAudio() {
+  const sonando = audio.audioIniciado() && !audio.silenciado();
+  elAudio.textContent = sonando ? 'Silenciar' : 'Escuchar';
+  elAudio.classList.toggle('sonando', sonando);
+}
+elAudio.addEventListener('click', async () => {
+  if (!audio.audioIniciado()) {
+    await audio.iniciarAudio(); // el primer clic enciende el audio
+    registrar('Audio en línea');
+  } else {
+    audio.silenciar(!audio.silenciado()); // después solo silencia lo que escucha esta persona
+    registrar(audio.silenciado() ? 'Audio en silencio' : 'Audio en línea');
+  }
+  pintarBotonAudio();
+});
+
+// Fuerza del pulso RGB por sonido: el kick marca el pulso; hat y perc apenas lo rozan.
+const PULSO_RGB = { kick: 0.8, snare: 0.5, hat: 0.12, perc: 0.2 };
+// Cada paso de cada instrumento llega aquí, sincronizado con el audio.
+audio.fijarReaccion((id, paso, sono, tipo) => {
+  const p = piezas.get(id);
+  if (!p) return;
+  if (editor && seleccion === p) editor.marcarPaso(paso);
+  if (!sono) return;
+  if (tipo === 'percusion') {
+    golpearGema(p.gema, 0.5);
+    pulsoRGB(PULSO_RGB[p.inst.parametros.sonido] ?? 0.3); // cada golpe dispara el desplazamiento RGB
+  } else {
+    golpearGema(p.gema, 0.3);
+  }
+  // más notas y más rápido → más actividad → giro más rápido y en ángulos más aleatorios
+  p.actividad = Math.min(p.actividad + 1, 14);
+  const amplitud = 0.08 * Math.min(p.actividad, 8);
+  p.ladeo.set((Math.random() - 0.5) * amplitud, (Math.random() - 0.5) * amplitud);
+});
+
+// =====================================================================
+// EDICIÓN de instrumentos propios
+// Los parámetros y el patrón se aplican al instante en local (se oyen sin esperar)
+// y se envían al servidor como mucho 10 veces por segundo.
+// =====================================================================
+const edicionesPendientes = new Map(); // id → cambios por enviar
+let ultimaEdicion = 0;
+function enviarEdiciones() {
+  ultimaEdicion = performance.now();
+  for (const [id, cambios] of edicionesPendientes) {
+    pedir('instrumento:editar', { id, ...cambios }).then(avisarError);
+  }
+  edicionesPendientes.clear();
+}
+function editarPropia(p, cambios, final) {
+  if (cambios.patron) p.inst.patron = cambios.patron;
+  if (cambios.parametros) p.inst.parametros = { ...p.inst.parametros, ...cambios.parametros };
+  audio.ponerInstrumento(p.inst);
+  const previos = edicionesPendientes.get(p.id) || {};
+  edicionesPendientes.set(p.id, {
+    ...previos, ...cambios,
+    ...(cambios.parametros && { parametros: { ...previos.parametros, ...cambios.parametros } }),
+  });
+  if (final || performance.now() - ultimaEdicion > 100) enviarEdiciones();
+}
+
+let editor = null;
+const elEditor = document.getElementById('rastreo-editor');
+function montarEditor(p) {
+  editor?.destruir();
+  editor = null;
+  if (!p || !esMia(p)) return; // las piezas de otros solo muestran su información
+  editor = crearEditor(elEditor, () => p.inst, {
+    editar: (cambios, final) => editarPropia(p, cambios, final),
+    // pasos y subdivisión cambian la estructura: se espera la respuesta del servidor
+    estructura: (cambios) => { enviarEdiciones(); pedir('instrumento:editar', { id: p.id, ...cambios }).then(avisarError); },
+  });
+}
+
+// =====================================================================
 // MEZCLA ESPACIAL + SELECCIÓN Y ARRASTRE DE PIEZAS
 // =====================================================================
 let seleccion = null;
@@ -270,9 +372,11 @@ scene.add(anillo);
 
 function seleccionar(pieza) {
   if (pieza && pieza !== seleccion) registrar(MODULOS[pieza.tipo] + ' en rastreo');
+  const cambio = pieza !== seleccion;
   seleccion = pieza;
   anillo.visible = !!pieza;
   textoRastreo = '';
+  if (cambio) montarEditor(pieza);
 }
 
 const raycaster = new THREE.Raycaster();
@@ -372,6 +476,17 @@ const elPunto = document.getElementById('r-punto');
 const elCapaLinea = document.getElementById('rastreo-linea');
 const enPantalla = new THREE.Vector3();
 let textoRastreo = '';
+// Información de solo lectura de un instrumento ajeno.
+const NOMBRE_ACORDE = { triada: 'tríada', septima: 'séptima', sus: 'sus' };
+function resumenInstrumento(inst) {
+  const p = inst.parametros;
+  const sonido = inst.tipo === 'percusion' ? p.sonido
+    : inst.tipo === 'armonia' ? NOMBRE_ACORDE[p.acorde] + ' · inv ' + p.inversion : 'mono · glide ' + p.glide.toFixed(2);
+  const notas = inst.patron.filter((v) => v !== null && v !== false).length;
+  return '<div class="ed-info"><b>Sonido</b><span>' + escapar(sonido) + '</span></div>'
+    + '<div class="ed-info"><b>Patrón</b><span>' + inst.pasos + ' pasos · ' + escapar(inst.subdivision) + '</span></div>'
+    + '<div class="ed-info"><b>Notas</b><span>' + notas + '</span></div>';
+}
 function actualizarRastreo() {
   const visible = !!seleccion;
   elRastreo.hidden = !visible;
@@ -387,7 +502,8 @@ function actualizarRastreo() {
     + '<div><b>Tripulante</b><span>' + escapar(indicativoDe(seleccion.dueno)) + (esMia(seleccion) ? ' · tú' : '') + '</span></div>'
     + '<div><b>Coord</b><span>X ' + coord(pos.x) + ' · Z ' + coord(pos.z) + '</span></div>'
     + '<div><b>Paneo</b><span>' + (m.paneo >= 0 ? '+' : '-') + Math.abs(m.paneo).toFixed(2) + '</span></div>'
-    + '<div><b>Volumen</b><span>' + m.volumen.toFixed(2) + '</span></div>';
+    + '<div><b>Volumen</b><span>' + m.volumen.toFixed(2) + '</span></div>'
+    + (esMia(seleccion) ? '' : resumenInstrumento(seleccion.inst)); // lo propio se ve en el editor
   if (texto !== textoRastreo) {
     elRastreoDatos.innerHTML = texto;
     textoRastreo = texto;
@@ -457,14 +573,27 @@ function animar() {
   tiempo += dt;
   const rot = params.general.rotacion;
   const suavizado = 1 - Math.exp(-dt * 12); // las piezas de otros se deslizan hacia su posición nueva
+  const calma = Math.exp(-dt / 1.2);        // la actividad se apaga en un par de segundos sin notas
+  const ladeoSuave = 1 - Math.exp(-dt * 4);
   for (const p of piezas.values()) {
     const g = p.gema;
-    // Giran solo sobre el eje vertical (con un balanceo leve) para que cada silueta conserve su dirección.
-    g.giro.rotation.y += dt * rot * (0.25 + p.semilla * 0.1);
-    g.giro.rotation.z = Math.sin(tiempo * 0.3 + p.semilla * 6.28) * 0.07;
+    // Sin notas giran solo sobre el eje vertical (con un balanceo leve) para que se lea la silueta;
+    // con actividad giran más rápido y se ladean hacia ángulos aleatorios.
+    p.actividad *= calma;
+    g.giro.rotation.y += dt * rot * (0.25 + p.semilla * 0.1) * (1 + 0.35 * p.actividad);
+    p.ladeo.multiplyScalar(calma);
+    g.giro.rotation.x += (p.ladeo.x - g.giro.rotation.x) * ladeoSuave;
+    g.giro.rotation.z += (Math.sin(tiempo * 0.3 + p.semilla * 6.28) * 0.07 + p.ladeo.y - g.giro.rotation.z) * ladeoSuave;
     if (agarre?.pieza !== p) g.grupo.position.lerp(p.destino, suavizado);
     animarGema(g, p.tipo, dt);
+    // posición → mezcla: paneo y volumen se actualizan en vivo (también al arrastrar)
+    const m = calcularMezcla(g.grupo.position);
+    if (!p.mezcla || m.paneo !== p.mezcla.paneo || m.volumen !== p.mezcla.volumen) {
+      p.mezcla = m;
+      audio.mezclar(p.id, m.paneo, m.volumen);
+    }
   }
+  if (edicionesPendientes.size && performance.now() - ultimaEdicion > 100) enviarEdiciones();
   if (envioPendiente) enviarPosicion(envioPendiente);
   if (seleccion) {
     const pos = seleccion.gema.grupo.position;
